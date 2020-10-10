@@ -12,6 +12,9 @@ class DeskViewController: NSViewController {
     private var deskConnect: DeskConnect!
     private var longClick: NSPressGestureRecognizer?
     private var userDefaults: UserDefaults?
+    private var upTimer : Timer = Timer.init()
+    private var downTimer : Timer = Timer.init()
+    private var timeout : Int = 5
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -37,7 +40,12 @@ class DeskViewController: NSViewController {
         }).disposed(by: self.deskConnect.dispose)
         
         self.userDefaults = UserDefaults.init(suiteName: "positions")
-        self.initSavedPositions()
+        
+        UserDefaults.standard.register(defaults: ["periodic-stand" : true, "stand-per-hour" : 10])
+        
+        self.initSavedValues()
+
+        self.updateTimer()
         
         self.buttonUp.sendAction(on: .leftMouseDown)
         self.buttonUp.isContinuous = true
@@ -60,6 +68,12 @@ class DeskViewController: NSViewController {
     
     @IBOutlet var sitPosition: NSTextField!
     @IBOutlet var standPosition: NSTextField!
+    
+    @IBOutlet var standPerHourLabel: NSTextField!
+    @IBOutlet var periodicStand: NSSwitch!
+    @IBOutlet var periodicStandStepper: NSStepper!
+    @IBOutlet var periodicTimeoutLabel: NSTextField!
+    @IBOutlet var periodicTimeoutStepper: NSStepper!
     
     var isMovingToPositionValue = false
     var moveToPositionValue = 70.0
@@ -118,17 +132,84 @@ class DeskViewController: NSViewController {
         }
     }
     
+    @IBAction func updatePeriodicStandTime(_ sender: NSStepper) {
+        self.standPerHourLabel.stringValue = String(format: "%.2d", sender.intValue)
+        self.userDefaults?.setValue(sender.intValue, forKey: "stand-per-hour")
+        self.updateTimer()
+    }
+    
+    @IBAction func updatePeriodicTimeEnable(_ sender: NSSwitch) {
+        self.userDefaults?.setValue((sender.state == NSControl.StateValue.on) , forKey: "periodic-stand")
+        self.updateTimer()
+    }
+    
+    @IBAction func updatePeriodicTimeout(_ sender: NSStepper) {
+        self.periodicTimeoutLabel.stringValue = String(format: "%.2d", sender.intValue)
+        self.userDefaults?.setValue(sender.intValue, forKey: "stand-timeout")
+        self.timeout = Int(sender.intValue)
+    }
+    
+    
     @IBAction func stop(_ sender: NSButton) {
         self.deskConnect.stopMoving()
     }
     
-    private func initSavedPositions() {
+    private func initSavedValues() {
         if let sitPosition = self.userDefaults?.double(forKey: "sit-position") {
             self.sitPosition.stringValue = String(format:"%.1f", sitPosition)
         }
         
         if let standPosition = self.userDefaults?.double(forKey: "stand-position") {
             self.standPosition.stringValue = String(format:"%.1f", standPosition)
+        }
+        
+        if let periodicStand = self.userDefaults?.bool(forKey: "periodic-stand") {
+            self.periodicStand.state = periodicStand ? NSControl.StateValue.on : NSControl.StateValue.off
+        }
+        
+        if let standPerHour = self.userDefaults?.integer(forKey: "stand-per-hour") {
+            self.periodicStandStepper.intValue = Int32(standPerHour)
+            self.standPerHourLabel.stringValue = String(format: "%.2d", standPerHour)
+        }
+        
+        if let periodicTimeout = self.userDefaults?.integer(forKey: "stand-timeout") {
+            self.periodicTimeoutStepper.intValue = Int32(periodicTimeout)
+            self.standPerHourLabel.stringValue = String(format: "%.2d", periodicTimeout)
+            self.timeout = periodicTimeout
+        }
+    }
+    
+    private func updateTimer() {
+        upTimer.invalidate()
+        downTimer.invalidate()
+        
+        if let periodicStand = self.userDefaults?.bool(forKey: "periodic-stand") {
+            if (!periodicStand) {return}
+        }
+        
+        if let standPerHour = self.userDefaults?.integer(forKey: "stand-per-hour") {
+            
+            let upTime  = TimeInterval((60 - standPerHour) * 60)
+            let downTime = TimeInterval(60 * 60)
+            
+            upTimer = Timer.scheduledTimer(withTimeInterval: upTime, repeats: true, block: { timer in
+                var lastEvent:CFTimeInterval = 0
+                lastEvent = CGEventSource.secondsSinceLastEventType(CGEventSourceStateID.hidSystemState, eventType: CGEventType(rawValue: ~0)!)
+                if lastEvent < Double(self.timeout * 60) {
+                    self.moveToStandPosition(NSButton.init())
+                }
+            })
+            
+            downTimer = Timer.scheduledTimer(withTimeInterval: downTime, repeats: true, block: { timer in
+                var lastEvent:CFTimeInterval = 0
+                lastEvent = CGEventSource.secondsSinceLastEventType(CGEventSourceStateID.hidSystemState, eventType: CGEventType(rawValue: ~0)!)
+                if lastEvent < Double(self.timeout * 60) {
+                    self.moveToSitPosition(NSButton.init())
+                }
+            })
+            
+            upTimer.tolerance = 10
+            downTimer.tolerance = 10
         }
     }
 }
