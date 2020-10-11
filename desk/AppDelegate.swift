@@ -17,7 +17,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     var eventMonitor: EventMonitor?
     
+    var deskConnect: DeskConnect! = DeskConnect()
+    var userDefaults: UserDefaults?
+    
     func applicationDidFinishLaunching(_ aNotification: Notification) {
+        
+        self.userDefaults = UserDefaults.init(suiteName: "settings")
+        UserDefaults.standard.register(defaults: ["periodic-stand" : false, "stand-per-hour" : 10])
+        
+        self.initSavedValues()
+        
         if let button = statusItem.button {
             button.image = NSImage(named: NSImage.Name("table"))
             button.action = #selector(togglePopover(_:))
@@ -51,5 +60,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func closePopover(sender: Any?) {
       popover.performClose(sender)
+    }
+    
+    private func initSavedValues() {
+        if let sitPosition = self.userDefaults?.double(forKey: "sit-position") {
+            self.deskConnect.autoSitPos = sitPosition
+        }
+        
+        if let standPosition = self.userDefaults?.double(forKey: "stand-position") {
+            self.deskConnect.autoStandPos = standPosition
+        }
+        
+        if let periodicStand = self.userDefaults?.bool(forKey: "periodic-stand") {
+            if let standPerHour = self.userDefaults?.integer(forKey: "stand-per-hour") {
+                if (!periodicStand) {
+                    self.deskConnect.standPerHour = nil
+                } else {
+                    self.deskConnect.standPerHour = TimeInterval(standPerHour * 60)
+                }
+            }
+        }
+        
+        if let periodicTimeout = self.userDefaults?.integer(forKey: "stand-timeout") {
+            self.deskConnect.inactivityTimeout = TimeInterval(periodicTimeout * 60)
+        }
     }
 }

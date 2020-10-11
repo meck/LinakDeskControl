@@ -12,13 +12,11 @@ class DeskViewController: NSViewController {
     private var deskConnect: DeskConnect!
     private var longClick: NSPressGestureRecognizer?
     private var userDefaults: UserDefaults?
-    private var upTimer : Timer = Timer.init()
-    private var downTimer : Timer = Timer.init()
-    private var timeout : Int = 5
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        self.deskConnect = DeskConnect()
+        self.deskConnect = (NSApplication.shared.delegate as! AppDelegate).deskConnect
+        self.userDefaults = (NSApplication.shared.delegate as! AppDelegate).userDefaults
         
         self.buttonUp.isEnabled = false
         self.buttonDown.isEnabled = false
@@ -39,13 +37,7 @@ class DeskViewController: NSViewController {
             self.buttonDown.isEnabled = true
         }).disposed(by: self.deskConnect.dispose)
         
-        self.userDefaults = UserDefaults.init(suiteName: "positions")
-        
-        UserDefaults.standard.register(defaults: ["periodic-stand" : true, "stand-per-hour" : 10])
-        
         self.initSavedValues()
-
-        self.updateTimer()
         
         self.buttonUp.sendAction(on: .leftMouseDown)
         self.buttonUp.isContinuous = true
@@ -135,18 +127,26 @@ class DeskViewController: NSViewController {
     @IBAction func updatePeriodicStandTime(_ sender: NSStepper) {
         self.standPerHourLabel.stringValue = String(format: "%.2d", sender.intValue)
         self.userDefaults?.setValue(sender.intValue, forKey: "stand-per-hour")
-        self.updateTimer()
+        self.deskConnect.standPerHour = TimeInterval(sender.intValue * 60)
     }
     
     @IBAction func updatePeriodicTimeEnable(_ sender: NSSwitch) {
         self.userDefaults?.setValue((sender.state == NSControl.StateValue.on) , forKey: "periodic-stand")
-        self.updateTimer()
+        if (sender.state == NSControl.StateValue.off) {
+            self.deskConnect.standPerHour = nil
+            self.periodicStandStepper.isEnabled = false
+            self.periodicTimeoutStepper.isEnabled = false
+        } else {
+            self.deskConnect.standPerHour = TimeInterval(self.periodicStandStepper.intValue * 60)
+            self.periodicStandStepper.isEnabled = true
+            self.periodicTimeoutStepper.isEnabled = true
+        }
     }
     
     @IBAction func updatePeriodicTimeout(_ sender: NSStepper) {
         self.periodicTimeoutLabel.stringValue = String(format: "%.2d", sender.intValue)
         self.userDefaults?.setValue(sender.intValue, forKey: "stand-timeout")
-        self.timeout = Int(sender.intValue)
+        self.deskConnect.inactivityTimeout = TimeInterval(sender.intValue * 60)
     }
     
     
@@ -163,53 +163,29 @@ class DeskViewController: NSViewController {
             self.standPosition.stringValue = String(format:"%.1f", standPosition)
         }
         
-        if let periodicStand = self.userDefaults?.bool(forKey: "periodic-stand") {
-            self.periodicStand.state = periodicStand ? NSControl.StateValue.on : NSControl.StateValue.off
-        }
-        
         if let standPerHour = self.userDefaults?.integer(forKey: "stand-per-hour") {
             self.periodicStandStepper.intValue = Int32(standPerHour)
             self.standPerHourLabel.stringValue = String(format: "%.2d", standPerHour)
         }
         
+        if let periodicStand = self.userDefaults?.bool(forKey: "periodic-stand") {
+            if let standPerHour = self.userDefaults?.integer(forKey: "stand-per-hour") {
+                self.periodicStandStepper.intValue = Int32(standPerHour)
+                self.standPerHourLabel.stringValue = String(format: "%.2d", standPerHour)
+                self.periodicStand.state = periodicStand ? NSControl.StateValue.on : NSControl.StateValue.off
+                if (!periodicStand) {
+                    self.periodicStandStepper.isEnabled = false
+                    self.periodicTimeoutStepper.isEnabled = false
+                } else {
+                    self.periodicStandStepper.isEnabled = true
+                    self.periodicTimeoutStepper.isEnabled = true
+                }
+            }
+        }
+        
         if let periodicTimeout = self.userDefaults?.integer(forKey: "stand-timeout") {
             self.periodicTimeoutStepper.intValue = Int32(periodicTimeout)
-            self.standPerHourLabel.stringValue = String(format: "%.2d", periodicTimeout)
-            self.timeout = periodicTimeout
-        }
-    }
-    
-    private func updateTimer() {
-        upTimer.invalidate()
-        downTimer.invalidate()
-        
-        if let periodicStand = self.userDefaults?.bool(forKey: "periodic-stand") {
-            if (!periodicStand) {return}
-        }
-        
-        if let standPerHour = self.userDefaults?.integer(forKey: "stand-per-hour") {
-            
-            let upTime  = TimeInterval((60 - standPerHour) * 60)
-            let downTime = TimeInterval(60 * 60)
-            
-            upTimer = Timer.scheduledTimer(withTimeInterval: upTime, repeats: true, block: { timer in
-                var lastEvent:CFTimeInterval = 0
-                lastEvent = CGEventSource.secondsSinceLastEventType(CGEventSourceStateID.hidSystemState, eventType: CGEventType(rawValue: ~0)!)
-                if lastEvent < Double(self.timeout * 60) {
-                    self.moveToStandPosition(NSButton.init())
-                }
-            })
-            
-            downTimer = Timer.scheduledTimer(withTimeInterval: downTime, repeats: true, block: { timer in
-                var lastEvent:CFTimeInterval = 0
-                lastEvent = CGEventSource.secondsSinceLastEventType(CGEventSourceStateID.hidSystemState, eventType: CGEventType(rawValue: ~0)!)
-                if lastEvent < Double(self.timeout * 60) {
-                    self.moveToSitPosition(NSButton.init())
-                }
-            })
-            
-            upTimer.tolerance = 10
-            downTimer.tolerance = 10
+            self.periodicTimeoutLabel.stringValue = String(format: "%.2d", periodicTimeout)
         }
     }
 }

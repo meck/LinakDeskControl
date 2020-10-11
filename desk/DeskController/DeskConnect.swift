@@ -26,6 +26,20 @@ class DeskConnect: NSObject, CBPeripheralDelegate, CBCentralManagerDelegate {
     private var moveToPositionValue: Double? = nil
     private var moveToPositionTimer: Timer?
     
+    private var scheduleUpTimer: Timer?
+    private var scheduledownTimer: Timer?
+    var standPerHour: TimeInterval? {
+        didSet {
+            if standPerHour != oldValue {
+                scheduleStandingInterval(standInterval: standPerHour)
+            }
+        }
+    }
+
+    var autoStandPos: Double?
+    var autoSitPos: Double?
+    var inactivityTimeout: TimeInterval = (5 * 60)
+    
     let deviceName = BehaviorRelay<String>(value: "")
     let currentPosition = BehaviorRelay<Double>(value: 0)
     let dispose = DisposeBag()
@@ -178,6 +192,39 @@ class DeskConnect: NSObject, CBPeripheralDelegate, CBCentralManagerDelegate {
             self.moveDown()
         } else if (positionRequired > self.currentPosition.value) {
             self.moveUp()
+        }
+    }
+    
+    private func scheduleStandingInterval(standInterval: TimeInterval?) {
+        if let upT = scheduleUpTimer {
+            upT.invalidate()
+        }
+        if let downT = scheduledownTimer {
+            downT.invalidate()
+        }
+        
+        if let standPerHourU = standPerHour {
+            if standPerHourU > 0 && standPerHourU < 3600  {
+                let downTime = TimeInterval(3600)
+                let upTime = downTime - standPerHourU
+                
+                scheduleUpTimer = Timer.scheduledTimer(withTimeInterval: upTime, repeats: true, block: { timer in
+                    var lastEvent:CFTimeInterval = 0
+                    lastEvent = CGEventSource.secondsSinceLastEventType(CGEventSourceStateID.hidSystemState, eventType: CGEventType(rawValue: ~0)!)
+                    if lastEvent < self.inactivityTimeout {
+                        if let pos = self.autoStandPos {
+                            self.moveToPosition(position: pos)
+                        }
+                    }
+                })
+                
+                // Alwasy lower
+                scheduledownTimer = Timer.scheduledTimer(withTimeInterval: downTime, repeats: true, block: { timer in
+                    if let pos = self.autoSitPos {
+                        self.moveToPosition(position: pos)
+                    }
+                })
+            }
         }
     }
 }
